@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Controle de Metas e Comissões</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen p-4 md:p-8 font-sans">
+  <div class="max-w-6xl mx-auto space-y-6">
+    <header class="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-900 p-6 rounded-2xl border border-slate-800">
+      <div>
+        <h1 class="text-2xl font-bold text-emerald-400">Painel de Metas & Comissões</h1>
+        <p class="text-slate-400 text-sm">Acompanhamento diário com cálculo automático de faixas e travas</p>
+      </div>
+      <button type="button" onclick="resetarMes()" class="px-4 py-2 bg-rose-500/10 text-rose-400 border border-rose-500/30 rounded-xl text-sm font-medium hover:bg-rose-500/20 transition cursor-pointer">
+        Zerar Vendas do Mês
+      </button>
+    </header>
+
+    <section class="bg-slate-900 p-6 rounded-2xl border border-slate-800 space-y-4">
+      <h2 class="text-lg font-semibold text-slate-200">Cadastrar Novo Vendedor</h2>
+      <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
+        <input id="nome" type="text" placeholder="Nome do vendedor" class="bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500" />
+        <input id="metaProd" type="number" placeholder="Meta Produtos (R$)" value="50000" class="bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500" />
+        <input id="metaAcess" type="number" placeholder="Meta Acessórios (R$)" value="10000" class="bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500" />
+        <input id="metaServ" type="number" placeholder="Meta Serviços (R$)" value="5000" class="bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500" />
+        <button type="button" onclick="adicionarVendedor()" class="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold rounded-xl px-4 py-2.5 text-sm transition cursor-pointer">
+          + Adicionar Vendedor
+        </button>
+      </div>
+    </section>
+
+    <section id="listaVendedores" class="grid grid-cols-1 lg:grid-cols-2 gap-6"></section>
+  </div>
+
+  <script>
+    const TABELA = {
+      produtos: { C: 0.0045, B: 0.0063, A: 0.0090, A2: 0.0099, A3: 0.0108, A4: 0.0117 },
+      acessorios: { C: 0.0135, B: 0.0180, A: 0.0270, A2: 0.0297, A3: 0.0324, A4: 0.0351 },
+      servicos: { C: 0.0360, B: 0.0540, A: 0.0720, A2: 0.0792, A3: 0.0864, A4: 0.0936 }
+    };
+
+    let vendedores = JSON.parse(localStorage.getItem('metas_vendedores_v1')) || [
+      { id: 1, nome: 'Vendedor Exemplo', metaProd: 50000, metaAcess: 10000, metaServ: 5000, vendProd: 0, vendAcess: 0, vendServ: 0 }
+    ];
+
+    function salvar() {
+      localStorage.setItem('metas_vendedores_v1', JSON.stringify(vendedores));
+    }
+
+    function moeda(v) {
+      return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    }
+
+    function faixaNatural(pct) {
+      if (pct >= 130) return 'A4';
+      if (pct >= 120) return 'A3';
+      if (pct >= 110) return 'A2';
+      if (pct >= 100) return 'A';
+      if (pct >= 80) return 'B';
+      return 'C';
+    }
+
+    function calcularComissao(v) {
+      const pctProd = v.metaProd > 0 ? (v.vendProd / v.metaProd) * 100 : 0;
+      const pctAcess = v.metaAcess > 0 ? (v.vendAcess / v.metaAcess) * 100 : 0;
+      const pctServ = v.metaServ > 0 ? (v.vendServ / v.metaServ) * 100 : 0;
+
+      let fProd = faixaNatural(pctProd);
+      let fAcess = faixaNatural(pctAcess);
+      let fServ = faixaNatural(pctServ);
+
+      const bateuProd = pctProd >= 100;
+      const bateuAcess = pctAcess >= 100;
+      const bateuServ = pctServ >= 100;
+
+      let travaAviso = '';
+
+      if (!bateuServ) {
+        if (bateuProd) fProd = 'B';
+        if (bateuAcess) fAcess = 'B';
+        travaAviso = 'Trava ativa: Serviços abaixo de 100% limita Produtos e Acessórios batidos à faixa B.';
+      } else if (!bateuProd || !bateuAcess) {
+        if (bateuProd && ['A2', 'A3', 'A4'].includes(fProd)) fProd = 'A';
+        if (bateuAcess && ['A2', 'A3', 'A4'].includes(fAcess)) fAcess = 'A';
+        if (bateuServ && ['A2', 'A3', 'A4'].includes(fServ)) fServ = 'A';
+        travaAviso = 'Trava ativa: Produtos ou Acessórios abaixo de 100% limita as demais metas batidas à faixa A.';
+      }
+
+      const comProd = v.vendProd * TABELA.produtos[fProd];
+      const comAcess = v.vendAcess * TABELA.acessorios[fAcess];
+      const comServ = v.vendServ * TABELA.servicos[fServ];
+
+      return {
+        pctProd, pctAcess, pctServ,
+        fProd, fAcess, fServ,
+        comProd, comAcess, comServ,
+        total: comProd + comAcess + comServ,
+        travaAviso
+      };
+    }
+
+    function adicionarVendedor() {
+      const nomeInput = document.getElementById('nome');
+      const nome = nomeInput.value.trim() || `Vendedor ${vendedores.length + 1}`;
+      const metaProd = parseFloat(document.getElementById('metaProd').value) || 50000;
+      const metaAcess = parseFloat(document.getElementById('metaAcess').value) || 10000;
+      const metaServ = parseFloat(document.getElementById('metaServ').value) || 5000;
+
+      vendedores.push({
+        id: Date.now(),
+        nome,
+        metaProd,
+        metaAcess,
+        metaServ,
+        vendProd: 0,
+        vendAcess: 0,
+        vendServ: 0
+      });
+
+      nomeInput.value = '';
+      salvar();
+      render();
+    }
+
+    function removerVendedor(id) {
+      vendedores = vendedores.filter(v => v.id !== id);
+      salvar();
+      render();
+    }
+
+    function lancarVenda(id, categoria) {
+      const input = document.getElementById(`add-${categoria}-${id}`);
+      const valor = parseFloat(input.value);
+      if (!valor || isNaN(valor)) return;
+
+      const vendedor = vendedores.find(v => v.id === id);
+      if (vendedor) {
+        vendedor[categoria] = Math.max(0, vendedor[categoria] + valor);
+        input.value = '';
+        salvar();
+        render();
+      }
+    }
+
+    function editarMeta(id, campo, valor) {
+      const vendedor = vendedores.find(v => v.id === id);
+      if (vendedor) {
+        vendedor[campo] = Math.max(0, parseFloat(valor) || 0);
+        salvar();
+        render();
+      }
+    }
+
+    function resetarMes() {
+      if (!confirm('Deseja zerar as vendas acumuladas de todos os vendedores?')) return;
+      vendedores.forEach(v => {
+        v.vendProd = 0;
+        v.vendAcess = 0;
+        v.vendServ = 0;
+      });
+      salvar();
+      render();
+    }
+
+    function render() {
+      const container = document.getElementById('listaVendedores');
+      container.innerHTML = vendedores.map(v => {
+        const c = calcularComissao(v);
+        return `
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-5">
+            <div class="flex items-start justify-between border-b border-slate-800 pb-4">
+              <div>
+                <h3 class="text-xl font-bold text-white">${v.nome}</h3>
+                <p class="text-xs text-slate-400 mt-1">Comissão acumulada estimada</p>
+                <p class="text-3xl font-extrabold text-emerald-400 mt-0.5">${moeda(c.total)}</p>
+              </div>
+              <button type="button" onclick="removerVendedor(${v.id})" class="text-xs text-rose-400 hover:text-rose-300 bg-rose-500/10 px-3 py-1.5 rounded-lg cursor-pointer">
+                Remover
+              </button>
+            </div>
+
+            ${c.travaAviso ? `<div class="bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs p-3 rounded-xl">${c.travaAviso}</div>` : ''}
+
+            <div class="space-y-4">
+              ${renderLinhaCategoria(v.id, 'Produtos', 'vendProd', 'metaProd', v.vendProd, v.metaProd, c.pctProd, c.fProd, c.comProd)}
+              ${renderLinhaCategoria(v.id, 'Acessórios', 'vendAcess', 'metaAcess', v.vendAcess, v.metaAcess, c.pctAcess, c.fAcess, c.comAcess)}
+              ${renderLinhaCategoria(v.id, 'Serviços', 'vendServ', 'metaServ', v.vendServ, v.metaServ, c.pctServ, c.fServ, c.comServ)}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderLinhaCategoria(id, titulo, campoVenda, campoMeta, vendido, meta, pct, faixa, comissao) {
+      const barra = Math.min(100, pct);
+      return `
+        <div class="bg-slate-950/60 p-4 rounded-xl border border-slate-800/80 space-y-2.5">
+          <div class="flex justify-between items-center">
+            <div class="flex items-center gap-2">
+              <span class="font-semibold text-sm text-slate-200">${titulo}</span>
+              <span class="px-2 py-0.5 text-xs font-bold rounded bg-emerald-500/20 text-emerald-300">Faixa ${faixa}</span>
+            </div>
+            <span class="text-sm font-bold text-emerald-400">+ ${moeda(comissao)}</span>
+          </div>
+
+          <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+            <div class="bg-emerald-500 h-full transition-all" style="width: ${barra}%"></div>
+          </div>
+
+          <div class="flex flex-wrap justify-between items-center text-xs text-slate-400 gap-2">
+            <span>Vendido: <strong class="text-slate-200">${moeda(vendido)}</strong> (${pct.toFixed(1)}%)</span>
+            <label class="flex items-center gap-1">
+              Meta R$:
+              <input type="number" value="${meta}" onchange="editarMeta(${id}, '${campoMeta}', this.value)" class="w-24 bg-slate-800 border border-slate-700 rounded px-2 py-0.5 text-slate-200" />
+            </label>
+          </div>
+
+          <div class="flex gap-2 pt-1">
+            <input id="add-${campoVenda}-${id}" type="number" placeholder="Valor vendido no dia (R$)" class="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500" />
+            <button type="button" onclick="lancarVenda(${id}, '${campoVenda}')" class="bg-slate-700 hover:bg-emerald-600 hover:text-slate-950 text-white font-semibold px-3 py-1.5 rounded-lg text-xs transition cursor-pointer">
+              + Lançar
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    render();
+  </script>
+</body>
+</html>
